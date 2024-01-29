@@ -1,4 +1,5 @@
 #include "esp_camera.h"
+#include <Adafruit_NeoPixel.h>
 #include <WiFi.h>
 #include <WiFiManager.h>         // https://github.com/tzapu/WiFiManager
 #include <GyverButton.h>
@@ -21,21 +22,25 @@
 //#define CAMERA_MODEL_ESP_EYE
 //#define CAMERA_MODEL_M5STACK_PSRAM
 //#define CAMERA_MODEL_M5STACK_WIDE
-#define CAMERA_MODEL_AI_THINKER
+//#define CAMERA_MODEL_AI_THINKER
+#define CAMERA_MODEL_FREENOVE_ESP32S3
 #include "camera_pins.h"
 
 // system definitions
 #define VERSION					"1.2.1"
 #include "definitions.h"						
 // user definitions
-#define BTN_REC_PIN				12				// button's pin to start/stop video rec
-#define BTN_IS_TOUCH			0
+#define BTN_REC_PIN				1				// button's pin to start/stop video rec
+#define BTN_IS_TOUCH			1
 #define WIFIMGR_TIMEOUT			120				// in seconds
 #define MAGIC_NUMBER			77				// for EEPROM checking
 #define AUTOSTART_REC			1
 #define DEFAULT_FRAMESIZE 		FRAMESIZE_SVGA	// initial framesize of video rec and streaming
 #define DEVICE_NAME				"SKYNET.EYE001"
 #define AVILENGTH				300				// sec. Files larger than 4Gb can not be stored on a FAT32 volume. To be sure, assume 1 sec = 375 kB
+
+
+Adafruit_NeoPixel leds = Adafruit_NeoPixel(1, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 static const char devname[] = DEVICE_NAME;		// name of camera - frefix for filenames
 String 		ESP_SSID = "ESP_" + String(WIFI_getChipId(), HEX);
@@ -103,19 +108,22 @@ uint8_t sxga_h[2] = {0x00, 0x04}; // 1024
 uint8_t uxga_w[2] = {0x40, 0x06}; // 1600
 uint8_t uxga_h[2] = {0xB0, 0x04}; // 1200
 
-
+void setNeoPixelColor(int r,int g, int b){
+  leds.setPixelColor(0, leds.Color(r, g, b)); // Red color
+  leds.show();
+}
 // if we have no camera, or sd card, then flash rear led on and off to warn the human SOS - SOS
 void major_fail() {
   Serial.println(" ");
   for  (int i = 0;  i < 10; i++) {				// 10 loops or about 100 seconds then reboot
     for (int j = 0; j < 3; j++) {
-      digitalWrite(33, LOW);   delay(150);
-      digitalWrite(33, HIGH);  delay(150);
+      setNeoPixelColor(255,0,0);   delay(150);
+      setNeoPixelColor(0,0,0);  delay(150);
     }
     delay(1000);
     for (int j = 0; j < 3; j++) {
-      digitalWrite(33, LOW);  delay(500);
-      digitalWrite(33, HIGH); delay(500);
+      setNeoPixelColor(255,0,0);  delay(500);
+      setNeoPixelColor(0,0,0); delay(500);
     }
     delay(1000);
     Serial.print("Major Fail  "); Serial.print(i); Serial.print(" / "); Serial.println(10);
@@ -242,42 +250,16 @@ void startCameraServer();
 
 
 static esp_err_t init_sdcard() {
-  esp_err_t ret;
-  esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-    .format_if_mount_failed = false,
-    .max_files = 8,
-  };
-  sdmmc_card_t *card;
-  const char mount_point[] = MOUNT_POINT;
-  sdmmc_host_t host = SDMMC_HOST_DEFAULT();
-  sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
-  slot_config.width = 1;                                   // using 1-line SD mode
-  host.flags = SDMMC_HOST_FLAG_1BIT;                       // using 1 bit mode
-  host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
-  diskspeed = host.max_freq_khz;
-  
-  ret = esp_vfs_fat_sdmmc_mount(mount_point, &host, &slot_config, &mount_config, &card);
-  
-  if (ret != ESP_OK) {
-    if (ret == ESP_FAIL) {
-      Serial.println("Failed to mount SD card filesystem.");
-      Serial.println("Do you have an SD Card installed?");
-    }
-    else {
-      Serial.printf("Failed to initialize the card (%s). Make sure SD card lines have pull-up resistors in place.\n", esp_err_to_name(ret));
-    }
-    return ret;
+  SD_MMC.setPins(39, 38, 40);
+  if (!SD_MMC.begin(MOUNT_POINT, true, true, SDMMC_FREQ_DEFAULT, 5)) {
+    Serial.println("Card Mount Failed");
+    return ESP_FAIL;
   }
-  
   // Card has been initialized, print its properties
-  Serial.println("SD card properties:");
-  sdmmc_card_print_info(stdout, card);
-  if (!SD_MMC.begin()) {	// required by ftp system ??
-    Serial.println("Could not SD_MMC.begin() - folders won't be created");
-    //major_fail();
-	ret = ESP_FAIL;
-  }
-  return ret; // ESP_OK
+  uint64_t cardSize = SD_MMC.cardSize() / (1024 * 1024);
+  Serial.printf("SD_MMC Card Size: %lluMB\n", cardSize);
+  
+  return ESP_OK; // ESP_OK
 }
 
 
@@ -327,14 +309,12 @@ static esp_err_t start_avi() {	// start_avi - open the files and write in header
     Serial.println("Unable create idxfile");
     major_fail();
   }
-
   for (int i = 0; i < AVIOFFSET; i++) {
     char ch = pgm_read_byte(&avi_header[i]);
     buf[i] = ch;
   }
 
   size_t err = fwrite(buf, 1, AVIOFFSET, avifile);
-  //? может можно извлечь размеры кадра из названий разрешений FRAMESIZE_XXX
   if (framesize == 10) {		// uxga
     fseek(avifile, 0x40, SEEK_SET);
     err = fwrite(uxga_w, 1, 2, avifile);
@@ -408,6 +388,7 @@ static esp_err_t start_avi() {	// start_avi - open the files and write in header
   bad_jpg = 0;
   extend_jpg = 0;
   normal_jpg = 0;
+  return ESP_OK;
 } // end of start avi
 
 
@@ -510,6 +491,7 @@ static esp_err_t another_save_avi(camera_fb_t * fb ) { // another_save_avi saves
   idx_offset = idx_offset + jpeg_size + remnant + 8;
   movie_size = movie_size + remnant;
   totalw = totalw + millis() - bw;
+  return ESP_OK;
 } // end of another_pic_avi
 
 
@@ -565,7 +547,7 @@ static esp_err_t end_avi() { //  end_avi writes the index, and closes the files
 
     print_quartet(frame_cnt * 16, avifile);
 
-    //idxfile = fopen((curr_path + "idx.tmp").c_str(), "r");
+    idxfile = fopen((curr_path + "idx.tmp").c_str(), "r");
     idxfile = fopen(idxfname, "r");
 
     if (idxfile == NULL) {
@@ -577,7 +559,7 @@ static esp_err_t end_avi() { //  end_avi writes the index, and closes the files
     AteBytes = (char*) malloc (8);
 
     for (int i = 0; i < frame_cnt; i++) {
-      size_t res = fread ( AteBytes, 1, 8, idxfile);
+      //size_t res = fread ( AteBytes, 1, 8, idxfile);
       size_t i1_err = fwrite(dc_buf, 1, 4, avifile);
       size_t i2_err = fwrite(zero_buf, 1, 4, avifile);
       size_t i3_err = fwrite(AteBytes, 1, 8, avifile);
@@ -585,11 +567,12 @@ static esp_err_t end_avi() { //  end_avi writes the index, and closes the files
 
     free(AteBytes);
 
-    fclose(idxfile);
+    //fclose(idxfile);
     fclose(avifile);
-    //int xx = remove((curr_path + "idx.tmp").c_str());
-    int xx = remove(idxfname);
+    
+    //int xx = remove(idxfname);
   }
+  return ESP_OK;
 }
 
 camera_fb_t *  get_good_jpeg() {	// take a picture and make sure it has a good jpeg
@@ -652,9 +635,9 @@ void setup() {
   Serial.setDebugOutput(true);
   Serial.printf("VERSION = %s\n", VERSION);
   
-  pinMode(LED_RED, OUTPUT);				// little red led on back of chip
-  digitalWrite(LED_RED, LED_OFF);		// turn on the red LED on the back of chip
-  
+  leds.begin();
+  setNeoPixelColor(0,0,0); //set off initially
+
   //{camera setup
   Serial.println("Camera initialization");
   camera_config_t config;
@@ -691,10 +674,10 @@ void setup() {
     config.fb_count = 1;
   }
 
-#if defined(CAMERA_MODEL_ESP_EYE)
-  pinMode(13, INPUT_PULLUP);
-  pinMode(14, INPUT_PULLUP);
-#endif
+// #if defined(CAMERA_MODEL_ESP_EYE)
+//   pinMode(13, INPUT_PULLUP);
+//   pinMode(14, INPUT_PULLUP);
+// #endif
   //}
   
   //{camera init
@@ -766,11 +749,11 @@ void setup() {
   esp_err_t card_err = init_sdcard();
   if (card_err == ESP_OK) {
     Serial.println("SD card mount successfully.");
-	fl_sd_mounted = true;  
+	  fl_sd_mounted = true;  
   }
   else {
     Serial.printf("SD Card init failed with error 0x%x\n", card_err);
-	Serial.println("Video won't be record.");
+	  Serial.println("Video won't be record.");
     //fl_sd_mounted = false;
   }
   //}
@@ -810,7 +793,7 @@ void setup() {
     curr_path = ""; //MOUNT_POINT;
     curr_path += String(tmpstr);
     //Serial.print("curr_path = "); Serial.println(curr_path);
-	Serial.printf("Creating dir: '%s' as current path... ", curr_path);
+	  Serial.printf("Creating dir: '%s' as current path... ", curr_path);
     if (SD_MMC.mkdir(curr_path.c_str())) {
       Serial.println("Dir created");
     }
@@ -835,24 +818,21 @@ void loop() {
   buttonsTick();
   if (fl_sd_mounted) {
     //frame_cnt = frame_cnt + 1;
-    if      (!fl_recording &&  fl_start_rec) {	//start a movie
+    if (!fl_recording &&  fl_start_rec) {	//start a movie
       avi_start_time = millis();
-	  //framesize = new_framesize;
-	  //quality = new_quality;
+      //framesize = new_framesize;
+      //quality = new_quality;
       Serial.println("------------------------------------------------");
       Serial.printf("Start the file %d.%03d.avi\n",  folder_num, file_num);
       Serial.printf("Framesize %d, quality %d, length %d seconds\n", framesize, quality, avi_length);
-      
+      setNeoPixelColor(200,0,0);
       frame_cnt += 1;
       fb_curr = get_good_jpeg();				// should take zero time
-      delete_oldest();
+      //delete_oldest();
       start_avi();
+      
       fl_recording = true;
       fb_next = get_good_jpeg();				// should take nearly zero time due to time spent writing header
-      /*if (fb_for_stream == NULL) {
-        memcpy(&fb_tmp, fb_next, sizeof *fb_next);	//fb_tmp = *fb_next;
-        fb_for_stream = &fb_tmp;
-      } */
       another_save_avi( fb_curr);				// put first frame in avi
       esp_camera_fb_return(fb_curr);			// get rid of first frame
       fb_curr = NULL;
@@ -868,16 +848,16 @@ void loop() {
       
       end_avi();						// end the movie
       fl_recording = false;
-      digitalWrite(LED_RED, LED_OFF);
+      setNeoPixelColor(0,0,0);
       avi_end_time = millis();
-	  float fps = frame_cnt /  (1.0*(avi_end_time - avi_start_time) /1000);
+	    float fps = frame_cnt /  (1.0*(avi_end_time - avi_start_time) /1000);
       Serial.printf("It was %d frames, avg. framerate = %.1f fps.\n", frame_cnt, fps);
       Serial.println();
       frame_cnt = 0;					// start recording again on the next request
     }
     else if ( fl_recording &&  fl_start_rec) {  // another frame of the avi
       frame_cnt += 1;
-      if (frame_cnt % 24 == 0) { digitalWrite(LED_RED, !digitalRead(LED_RED)); }
+      setNeoPixelColor(155,0,0);
       fb_curr = fb_next;				// we will write a frame, and get the camera preparing a new one
       fb_next = get_good_jpeg();		// should take near zero, unless the sd is faster than the camera, when we will have to wait for the camera
       /*if (fb_for_stream == NULL) {

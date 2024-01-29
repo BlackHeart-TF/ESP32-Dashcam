@@ -1,7 +1,7 @@
 ## ESP32-DASHCAM
 
 Dashcam with Wi-Fi streaming.
-Based on `ESP32 CameraWebServer` example in Arduino.
+Based on `ESP32 CameraWebServer` example in Arduino, altered to work on S3/ESP32 board lib 2.X.X+.
 Inspired by (some ideas or/and code are taken from):
 	[jameszah's ESP32-CAM-Video-Recorder-junior](https://github.com/jameszah/ESP32-CAM-Video-Recorder-junior),
 	[s60sc's ESP32-CAM_MJPEG2SD](https://github.com/s60sc/ESP32-CAM_MJPEG2SD),
@@ -9,7 +9,7 @@ Inspired by (some ideas or/and code are taken from):
 
 ## About
 
-ESP32-DASHCAM is made for ESP32-CAM development board.
+This ESP32-DASHCAM is made for Freenove ESP32-S3 development board, but should work on any ESP32 variant with psram, as long as you adjust the pin configuration.
 
 **Features:**
 - Cyclically records video with fix length `avi_length` to memory card (built-in slot);
@@ -66,23 +66,23 @@ You can use usual tactile or touch button. Your choice should be set in `BTN_IS_
 
 ## Dependencies
 
-Tested on cheapest Chinese clone of Ai Thinker module with folowing setup and libs:
- - Arduino IDE 1.8.10 - 2.0 (beta)
- - "esp32 by Espressif Systems" board version 1.0.4. Link for board manager: https://dl.espressif.com/dl/package_esp32_index.json
+Tested on Freenove Esp32-S3 module with folowing setup and libs:
+ - Arduino IDE 2.2.1
+ - "esp32 by Espressif Systems" board version 2.0.11. Link for board manager: https://dl.espressif.com/dl/package_esp32_index.json
 
 | Lib					| Version	|
 | ----------------------|-----------|
-| 1) DNSServer			| 1.1.0		|
-| 2) EEPROM				| 1.0.3		|
-| 3) FS					| 1.0		|
-| 4) GyverButton		| 2.14		|
-| 5) SD_MMC				| 1.0		|
-| 6) WebServer			| 1.0		|
-| 7) WiFi				| 1.0		|
-| 8) WiFiManager		| 2.0.4-beta|
+| 1) GyverButton		| 2.14		|
+| 2) WiFiManager		| 2.0.4-beta|
+|                       |           |
+| 3) DNSServer			| 1.1.0+	|
+| 4) EEPROM				| 1.0.3+	|
+| 5) FS					| 1.0+		|
+| 6) SD_MMC				| 1.0+		|
+| 7) WebServer			| 1.0+		|
+| 8) WiFi				| 1.0+		|
 
-Newer versions of esp32 board conflicts with WiFi library.
-
+The top 2 are included, the later ones, i used whatever i used whatever was newest in the arduino repo, or included in the newer board lib
 
 ## Issues
 - [ ] When you change `quality` or `framesize` via web interface, all changes are applied immediately to observe changes in steaming. But video file will contain frames with different characteristics.

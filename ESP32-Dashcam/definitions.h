@@ -2,7 +2,7 @@
 
 #define MOUNT_POINT				"/sdcard"
 
-#define LED_RED					33		// works with inverted logic
+#define LED_PIN					48		// works with inverted logic
 #define LED_ON					LOW
 #define LED_OFF					HIGH
 
