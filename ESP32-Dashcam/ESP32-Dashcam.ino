@@ -30,8 +30,8 @@
 #define VERSION					"1.2.1"
 #include "definitions.h"						
 // user definitions
-#define BTN_REC_PIN				1				// button's pin to start/stop video rec
-#define BTN_IS_TOUCH			1
+#define BTN_REC_PIN				0				// button's pin to start/stop video rec
+#define BTN_IS_TOUCH			0
 #define WIFIMGR_TIMEOUT			120				// in seconds
 #define MAGIC_NUMBER			77				// for EEPROM checking
 #define AUTOSTART_REC			1
@@ -39,9 +39,10 @@
 #define DEVICE_NAME				"SKYNET.EYE001"
 #define AVILENGTH				300				// sec. Files larger than 4Gb can not be stored on a FAT32 volume. To be sure, assume 1 sec = 375 kB
 
+#define DEBOUNCE_DELAY 50 // Debounce delay in milliseconds
+
 
 Adafruit_NeoPixel leds = Adafruit_NeoPixel(1, LED_PIN, NEO_GRB + NEO_KHZ800);
-
 static const char devname[] = DEVICE_NAME;		// name of camera - frefix for filenames
 String 		ESP_SSID = "ESP_" + String(WIFI_getChipId(), HEX);
 const char* ESP_PWD = "12345678";
@@ -57,6 +58,12 @@ bool fl_oldestDirFound = false;
 
 // MicroSD
 int diskspeed = 0;
+
+//ignition switch
+int lastState = LOW;         // Variable to hold the last state of the pin
+int lastDebouncedState = LOW; 
+unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
+
 
 // files and paths
 String curr_path;
@@ -253,6 +260,7 @@ static esp_err_t init_sdcard() {
   SD_MMC.setPins(39, 38, 40);
   if (!SD_MMC.begin(MOUNT_POINT, true, true, SDMMC_FREQ_DEFAULT, 5)) {
     Serial.println("Card Mount Failed");
+    setNeoPixelColor(0,0,50);
     return ESP_FAIL;
   }
   // Card has been initialized, print its properties
@@ -635,6 +643,8 @@ void setup() {
   Serial.setDebugOutput(true);
   Serial.printf("VERSION = %s\n", VERSION);
   
+  pinMode(IGNITION_PIN, INPUT_PULLUP);  // Initialize the GPIO pin for the ignition switch
+
   leds.begin();
   setNeoPixelColor(0,0,0); //set off initially
 
@@ -816,6 +826,32 @@ void setup() {
 
 void loop() {
   buttonsTick();
+  // Check if the pin state has changed
+  int reading = digitalRead(IGNITION_PIN);
+  if (reading != lastState && reading != lastDebouncedState) {
+    lastDebounceTime = millis();  // reset the debouncing timer
+  }
+  lastState = reading;
+  // If the current time is greater than the last debounce time plus the debounce delay, 
+  // then the button state is stable
+  if ((millis() - lastDebounceTime) > DEBOUNCE_DELAY) {
+    // Check the button state and act only if the state has changed
+    if (reading != lastDebouncedState) {
+      lastDebouncedState = reading;
+
+      fl_start_rec = !lastDebouncedState;
+      // Detect rising edge
+      if (lastDebouncedState == HIGH) {
+        Serial.println("Rising edge detected");
+      }
+
+      // Detect falling edge
+      else if (lastDebouncedState == LOW) {
+        Serial.println("Falling edge detected");
+      }
+      lastState = lastDebouncedState;
+    }
+  }
   if (fl_sd_mounted) {
     //frame_cnt = frame_cnt + 1;
     if (!fl_recording &&  fl_start_rec) {	//start a movie
