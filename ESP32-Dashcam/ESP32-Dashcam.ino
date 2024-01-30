@@ -644,7 +644,9 @@ void setup() {
   Serial.printf("VERSION = %s\n", VERSION);
   
   pinMode(IGNITION_PIN, INPUT_PULLUP);  // Initialize the GPIO pin for the ignition switch
-
+  int reading = digitalRead(IGNITION_PIN);
+  lastState = reading;
+  lastDebouncedState = reading;
   leds.begin();
   setNeoPixelColor(0,0,0); //set off initially
 
