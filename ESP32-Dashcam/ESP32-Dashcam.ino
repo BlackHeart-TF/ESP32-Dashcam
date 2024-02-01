@@ -19,7 +19,7 @@
 
 // Select camera model
 #define CAMERA_MODEL_FREENOVE_ESP32S3
-//#define CAMERA_MODEL_SEEED_ESP32S3 1
+//#define CAMERA_MODEL_SEEED_ESP32S3
 
 #include "camera_pins.h"
 #include "definitions.h"
@@ -99,8 +99,7 @@ unsigned long movie_size, jpeg_size, idx_offset; // are initialized in start_avi
 uint8_t buf[BUFFSIZE];
 uint8_t zero_buf[4] = {0x00, 0x00, 0x00, 0x00};
 uint8_t dc_buf[4] = {0x30, 0x30, 0x64, 0x63};	// "00dc"
-uint8_t idx1_
-buf[4] = {0x69, 0x64, 0x78, 0x31};	// "idx1"
+uint8_t idx1_buf[4] = {0x69, 0x64, 0x78, 0x31};	// "idx1"
 
 uint8_t  cif_w[2] = {0x90, 0x01}; // 400
 uint8_t  cif_h[2] = {0x28, 0x01}; // 296
@@ -263,6 +262,9 @@ void startCameraServer();
 
 
 static esp_err_t init_sdcard() {
+  // #ifdef SD_CS
+  // digitalWrite(SD_CS,HIGH);
+  // #endif
   SD_MMC.setPins(SD_CLK, SD_CMD, SD_D0);
   if (!SD_MMC.begin(MOUNT_POINT, true, true, SDMMC_FREQ_DEFAULT, 5)) {
     Serial.println("Card Mount Failed");
@@ -648,7 +650,7 @@ void setup() {
   while (!Serial);
   Serial.setDebugOutput(true);
   Serial.printf("VERSION = %s\n", VERSION);
-  
+  setCpuFrequencyMhz(80);
   pinMode(IGNITION_PIN, INPUT_PULLUP);  // Initialize the GPIO pin for the ignition switch
   int reading = digitalRead(IGNITION_PIN);
   lastState = reading;
@@ -858,13 +860,13 @@ void loop() {
       // Detect rising edge
       if (lastDebouncedState == HIGH) {
         Serial.println("Rising edge detected");
-        setCpuFrequencyMhz(80);
+        //setCpuFrequencyMhz(80);
       }
 
       // Detect falling edge
       else if (lastDebouncedState == LOW) {
         Serial.println("Falling edge detected");
-        setCpuFrequencyMhz(240);
+        //setCpuFrequencyMhz(240);
       }
       lastState = lastDebouncedState;
     }
@@ -873,7 +875,7 @@ void loop() {
     //frame_cnt = frame_cnt + 1;
     if (!fl_recording &&  fl_start_rec) {	//start a movie
       avi_start_time = millis();
-      setCpuFrequencyMhz(80);
+      //setCpuFrequencyMhz(80);
       //framesize = new_framesize;
       //quality = new_quality;
       Serial.println("------------------------------------------------");
