@@ -18,17 +18,15 @@
 //
 
 // Select camera model
-//#define CAMERA_MODEL_WROVER_KIT
-//#define CAMERA_MODEL_ESP_EYE
-//#define CAMERA_MODEL_M5STACK_PSRAM
-//#define CAMERA_MODEL_M5STACK_WIDE
-//#define CAMERA_MODEL_AI_THINKER
 #define CAMERA_MODEL_FREENOVE_ESP32S3
+//#define CAMERA_MODEL_SEEED_ESP32S3 1
+
 #include "camera_pins.h"
+#include "definitions.h"
 
 // system definitions
 #define VERSION					"1.2.1"
-#include "definitions.h"						
+					
 // user definitions
 #define BTN_REC_PIN				0				// button's pin to start/stop video rec
 #define BTN_IS_TOUCH			0
@@ -41,8 +39,9 @@
 
 #define DEBOUNCE_DELAY 50 // Debounce delay in milliseconds
 
-
+#ifdef LED_IS_NEOPIXEL
 Adafruit_NeoPixel leds = Adafruit_NeoPixel(1, LED_PIN, NEO_GRB + NEO_KHZ800);
+#endif
 static const char devname[] = DEVICE_NAME;		// name of camera - frefix for filenames
 String 		ESP_SSID = "ESP_" + String(WIFI_getChipId(), HEX);
 const char* ESP_PWD = "12345678";
@@ -100,7 +99,8 @@ unsigned long movie_size, jpeg_size, idx_offset; // are initialized in start_avi
 uint8_t buf[BUFFSIZE];
 uint8_t zero_buf[4] = {0x00, 0x00, 0x00, 0x00};
 uint8_t dc_buf[4] = {0x30, 0x30, 0x64, 0x63};	// "00dc"
-uint8_t idx1_buf[4] = {0x69, 0x64, 0x78, 0x31};	// "idx1"
+uint8_t idx1_
+buf[4] = {0x69, 0x64, 0x78, 0x31};	// "idx1"
 
 uint8_t  cif_w[2] = {0x90, 0x01}; // 400
 uint8_t  cif_h[2] = {0x28, 0x01}; // 296
@@ -115,9 +115,15 @@ uint8_t sxga_h[2] = {0x00, 0x04}; // 1024
 uint8_t uxga_w[2] = {0x40, 0x06}; // 1600
 uint8_t uxga_h[2] = {0xB0, 0x04}; // 1200
 
-void setNeoPixelColor(int r,int g, int b){
+void setNeoPixelColor(uint8_t r,uint8_t g, uint8_t b){
+#ifdef LED_IS_NEOPIXEL
   leds.setPixelColor(0, leds.Color(r, g, b)); // Red color
   leds.show();
+#else
+  int ledpower = max(r,(max(g,b)));
+  uint16_t dutyCycle = (uint16_t)((ledpower * 8191) / 255);
+  ledcWrite(LEDC_CHANNEL_0, dutyCycle);//max duty: 8191
+#endif
 }
 // if we have no camera, or sd card, then flash rear led on and off to warn the human SOS - SOS
 void major_fail() {
@@ -257,7 +263,7 @@ void startCameraServer();
 
 
 static esp_err_t init_sdcard() {
-  SD_MMC.setPins(39, 38, 40);
+  SD_MMC.setPins(SD_CLK, SD_CMD, SD_D0);
   if (!SD_MMC.begin(MOUNT_POINT, true, true, SDMMC_FREQ_DEFAULT, 5)) {
     Serial.println("Card Mount Failed");
     setNeoPixelColor(0,0,50);
@@ -512,12 +518,12 @@ static esp_err_t end_avi() { //  end_avi writes the index, and closes the files
     fclose(idxfile);
     fclose(avifile);
     //int xx = remove((String(curr_path) + "idx.tmp").c_str());
-	int xx = remove(idxfname);
+	  int xx = remove(idxfname);
     int yy = remove(fname);
   }
   else {
     elapsedms = millis() - startms;
-	float fRealFPS = (1000.0f * (float)frame_cnt) / ((float)elapsedms);
+	  float fRealFPS = (1000.0f * (float)frame_cnt) / ((float)elapsedms);
     float fmicroseconds_per_frame = 1000000.0f / fRealFPS;
     uint8_t iAttainedFPS = round(fRealFPS);
     uint32_t us_per_frame = round(fmicroseconds_per_frame);
@@ -647,7 +653,14 @@ void setup() {
   int reading = digitalRead(IGNITION_PIN);
   lastState = reading;
   lastDebouncedState = reading;
+
+  #ifdef LED_IS_NEOPIXEL
   leds.begin();
+  #else
+  // Set up the LEDC channel
+  ledcSetup(LEDC_CHANNEL_0, 5, LEDC_TIMER_13_BIT);
+  ledcAttachPin(LED_PIN, LEDC_CHANNEL_0);
+  #endif
   setNeoPixelColor(0,0,0); //set off initially
 
   //{camera setup
@@ -845,11 +858,13 @@ void loop() {
       // Detect rising edge
       if (lastDebouncedState == HIGH) {
         Serial.println("Rising edge detected");
+        setCpuFrequencyMhz(80);
       }
 
       // Detect falling edge
       else if (lastDebouncedState == LOW) {
         Serial.println("Falling edge detected");
+        setCpuFrequencyMhz(240);
       }
       lastState = lastDebouncedState;
     }
@@ -858,6 +873,7 @@ void loop() {
     //frame_cnt = frame_cnt + 1;
     if (!fl_recording &&  fl_start_rec) {	//start a movie
       avi_start_time = millis();
+      setCpuFrequencyMhz(80);
       //framesize = new_framesize;
       //quality = new_quality;
       Serial.println("------------------------------------------------");
