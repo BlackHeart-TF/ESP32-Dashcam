@@ -1,9 +1,14 @@
+//
+// See config.h for all board/pin settings
+//
+
 #include "esp_camera.h"
 #include <WiFi.h>
 #include <WiFiManager.h>         // https://github.com/tzapu/WiFiManager
 #include <GyverButton.h>
 //flash memory (smth as EEPROM)
 #include <EEPROM.h>
+#include "EEPROMHandler.h"
 // MicroSD
 #include "driver/sdmmc_host.h"
 #include "driver/sdmmc_defs.h"
@@ -11,32 +16,17 @@
 #include "esp_vfs_fat.h"
 #include <SD_MMC.h>
 
-//
-// WARNING!!! Make sure that you have either selected ESP32 Wrover Module,
-//            or another board which has PSRAM enabled
-//
-
-
 #include "config.h"
 #include "error_lights.h"
 
-
-
 // system definitions
 
-#define VERSION					"1.2.1"
+#define VERSION				    	"2.0"
 					
 // user definitions
-#define BTN_REC_PIN				0				// button's pin to start/stop video rec
-#define BTN_IS_TOUCH			0
-#define WIFIMGR_TIMEOUT			120				// in seconds
-#define MAGIC_NUMBER			77				// for EEPROM checking
-#define AUTOSTART_REC			1
-#define DEFAULT_FRAMESIZE 		FRAMESIZE_SVGA	// initial framesize of video rec and streaming
-#define DEVICE_NAME				"SKYNET.EYE001"
-#define AVILENGTH				300				// sec. Files larger than 4Gb can not be stored on a FAT32 volume. To be sure, assume 1 sec = 375 kB
 
-#define DEBOUNCE_DELAY 50 // Debounce delay in milliseconds
+#define MAGIC_NUMBER		  	77				// for EEPROM checking
+#define DEFAULT_FRAMESIZE   FRAMESIZE_SVGA	// initial framesize of video rec and streaming
 
 static const char devname[] = DEVICE_NAME;		// name of camera - frefix for filenames
 String 		ESP_SSID = "ESP_" + String(WIFI_getChipId(), HEX);

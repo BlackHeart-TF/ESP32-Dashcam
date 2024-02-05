@@ -48,6 +48,8 @@ static ra_filter_t ra_filter;
 httpd_handle_t stream_httpd = NULL;
 httpd_handle_t camera_httpd = NULL;
 
+extern bool fl_start_rec;
+
 // my declarations
 extern uint8_t framesize;	// from main
 extern uint8_t quality;		// from main
@@ -307,17 +309,15 @@ static esp_err_t cmd_handler(httpd_req_t *req){
     else if(!strcmp(variable, "quality")) {
         res = s->set_quality(s, val);
         quality = val;
-        //new_quality = val;
         EEPROM.begin(EEPROM_SIZE);
         EEPROM.put(EEPROM_ADDR_QUALITY, quality);
-        //EEPROM.put(4, new_quality);
         EEPROM.end();
     }
     else if(!strcmp(variable, "contrast")) res = s->set_contrast(s, val);
     else if(!strcmp(variable, "brightness")) res = s->set_brightness(s, val);
     else if(!strcmp(variable, "saturation")) res = s->set_saturation(s, val);
     else if(!strcmp(variable, "gainceiling")) res = s->set_gainceiling(s, (gainceiling_t)val);
-    else if(!strcmp(variable, "colorbar")) res = s->set_colorbar(s, val);
+    else if(!strcmp(variable, "autorecord")) res = s->set_colorbar(s, val);
     else if(!strcmp(variable, "awb")) res = s->set_whitebal(s, val);
     else if(!strcmp(variable, "agc")) res = s->set_gain_ctrl(s, val);
     else if(!strcmp(variable, "aec")) res = s->set_exposure_ctrl(s, val);
@@ -378,7 +378,7 @@ static esp_err_t status_handler(httpd_req_t *req){
     p+=sprintf(p, "\"vflip\":%u,", s->status.vflip);
     p+=sprintf(p, "\"hmirror\":%u,", s->status.hmirror);
     p+=sprintf(p, "\"dcw\":%u,", s->status.dcw);
-    p+=sprintf(p, "\"colorbar\":%u,", s->status.colorbar);
+    p+=sprintf(p, "\"autorecord\":%u,", fl_start_rec);
     *p++ = '}';
     *p++ = 0;
     httpd_resp_set_type(req, "application/json");
@@ -390,10 +390,10 @@ static esp_err_t index_handler(httpd_req_t *req){
     httpd_resp_set_type(req, "text/html");
     httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
     sensor_t * s = esp_camera_sensor_get();
-    if (s->id.PID == OV3660_PID) {
-        return httpd_resp_send(req, (const char *)index_ov3660_html_gz, index_ov3660_html_gz_len);
-    }
-    return httpd_resp_send(req, (const char *)index_ov2640_html_gz, index_ov2640_html_gz_len);
+    // if (s->id.PID == OV3660_PID) {
+    //     return httpd_resp_send(req, (const char *)index_ov3660_html_gz, index_ov3660_html_gz_len);
+    // }
+    return httpd_resp_send(req, (const char *)compressed_html, compressed_html_len);
 }
 
 void startCameraServer(){

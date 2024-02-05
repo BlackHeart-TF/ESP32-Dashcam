@@ -5,6 +5,8 @@
   #define SD_CLK          39
   #define SD_CMD          38
   #define SD_D0           40
+  #define BTN_REC_PIN			0				// button's pin to start/stop video rec
+  #define BTN_IS_TOUCH		0
 
 #elif defined(CAMERA_MODEL_SEEED_ESP32S3)
   #define LED_PIN					LED_BUILTIN
@@ -13,6 +15,8 @@
   #define SD_CLK          7
   #define SD_CMD          9
   #define SD_D0           8
+  #define BTN_REC_PIN			0				// button's pin to start/stop video rec
+  #define BTN_IS_TOUCH		0
 #else
   #error "Camera model not selected"
 #endif
