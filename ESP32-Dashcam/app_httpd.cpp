@@ -22,7 +22,7 @@
 // #include "fd_forward.h"
 // #include "fr_forward.h"
 
-#include "definitions.h"
+#include "config.h"
 #include <EEPROM.h>
 
 

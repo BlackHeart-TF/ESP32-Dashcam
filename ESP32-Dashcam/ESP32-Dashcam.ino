@@ -1,5 +1,4 @@
 #include "esp_camera.h"
-#include <Adafruit_NeoPixel.h>
 #include <WiFi.h>
 #include <WiFiManager.h>         // https://github.com/tzapu/WiFiManager
 #include <GyverButton.h>
@@ -17,14 +16,14 @@
 //            or another board which has PSRAM enabled
 //
 
-// Select camera model
-#define CAMERA_MODEL_FREENOVE_ESP32S3
-//#define CAMERA_MODEL_SEEED_ESP32S3
 
-#include "camera_pins.h"
-#include "definitions.h"
+#include "config.h"
+#include "error_lights.h"
+
+
 
 // system definitions
+
 #define VERSION					"1.2.1"
 					
 // user definitions
@@ -39,9 +38,6 @@
 
 #define DEBOUNCE_DELAY 50 // Debounce delay in milliseconds
 
-#ifdef LED_IS_NEOPIXEL
-Adafruit_NeoPixel leds = Adafruit_NeoPixel(1, LED_PIN, NEO_GRB + NEO_KHZ800);
-#endif
 static const char devname[] = DEVICE_NAME;		// name of camera - frefix for filenames
 String 		ESP_SSID = "ESP_" + String(WIFI_getChipId(), HEX);
 const char* ESP_PWD = "12345678";
@@ -63,6 +59,7 @@ int lastState = LOW;         // Variable to hold the last state of the pin
 int lastDebouncedState = LOW; 
 unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
 
+ErrorLights lights(LED_PIN);
 
 // files and paths
 String curr_path;
@@ -114,32 +111,10 @@ uint8_t sxga_h[2] = {0x00, 0x04}; // 1024
 uint8_t uxga_w[2] = {0x40, 0x06}; // 1600
 uint8_t uxga_h[2] = {0xB0, 0x04}; // 1200
 
-void setNeoPixelColor(uint8_t r,uint8_t g, uint8_t b){
-#ifdef LED_IS_NEOPIXEL
-  leds.setPixelColor(0, leds.Color(r, g, b)); // Red color
-  leds.show();
-#else
-  int ledpower = max(r,(max(g,b)));
-  uint16_t dutyCycle = (uint16_t)((ledpower * 8191) / 255);
-  ledcWrite(LEDC_CHANNEL_0, dutyCycle);//max duty: 8191
-#endif
-}
 // if we have no camera, or sd card, then flash rear led on and off to warn the human SOS - SOS
 void major_fail() {
-  Serial.println(" ");
-  for  (int i = 0;  i < 10; i++) {				// 10 loops or about 100 seconds then reboot
-    for (int j = 0; j < 3; j++) {
-      setNeoPixelColor(255,0,0);   delay(150);
-      setNeoPixelColor(0,0,0);  delay(150);
-    }
-    delay(1000);
-    for (int j = 0; j < 3; j++) {
-      setNeoPixelColor(255,0,0);  delay(500);
-      setNeoPixelColor(0,0,0); delay(500);
-    }
-    delay(1000);
-    Serial.print("Major Fail  "); Serial.print(i); Serial.print(" / "); Serial.println(10);
-  }
+  lights.setStatus(ErrorComponent::Camera, 3);
+  
   ESP.restart();
 }
 
@@ -268,7 +243,7 @@ static esp_err_t init_sdcard() {
   SD_MMC.setPins(SD_CLK, SD_CMD, SD_D0);
   if (!SD_MMC.begin(MOUNT_POINT, true, true, SDMMC_FREQ_DEFAULT, 5)) {
     Serial.println("Card Mount Failed");
-    setNeoPixelColor(0,0,50);
+    lights.setStatus(ErrorComponent::SD, 2);
     return ESP_FAIL;
   }
   // Card has been initialized, print its properties
@@ -643,6 +618,15 @@ camera_fb_t *  get_good_jpeg() {	// take a picture and make sure it has a good j
 uint8_t* framebuffer;
 int framebuffer_len;
 
+bool readIgnitionPin(){
+  #ifdef IGNITION_PIN
+    int reading = digitalRead(IGNITION_PIN);
+    return reading;
+  #else
+    return false;
+  #endif
+}
+
 //------------------------------------------------------------------------
 void setup() {
   //WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
@@ -651,19 +635,14 @@ void setup() {
   Serial.setDebugOutput(true);
   Serial.printf("VERSION = %s\n", VERSION);
   setCpuFrequencyMhz(80);
-  pinMode(IGNITION_PIN, INPUT_PULLUP);  // Initialize the GPIO pin for the ignition switch
-  int reading = digitalRead(IGNITION_PIN);
+  #ifdef IGNITION_PIN
+    pinMode(IGNITION_PIN, INPUT_PULLUP);  // Initialize the GPIO pin for the ignition switch
+  #endif
+  int reading = readIgnitionPin();
   lastState = reading;
   lastDebouncedState = reading;
 
-  #ifdef LED_IS_NEOPIXEL
-  leds.begin();
-  #else
-  // Set up the LEDC channel
-  ledcSetup(LEDC_CHANNEL_0, 5, LEDC_TIMER_13_BIT);
-  ledcAttachPin(LED_PIN, LEDC_CHANNEL_0);
-  #endif
-  setNeoPixelColor(0,0,0); //set off initially
+  lights.begin();
 
   //{camera setup
   Serial.println("Camera initialization");
@@ -733,7 +712,49 @@ void setup() {
   s->set_hmirror(s, 1);
 #endif
   //} camera init
+ 
   
+  //{SD card init
+  esp_err_t card_err = init_sdcard();
+  if (card_err == ESP_OK) {
+    Serial.println("SD card mount successfully.");
+	  fl_sd_mounted = true;  
+  }
+  else {
+    Serial.printf("SD Card init failed with error 0x%x\n", card_err);
+	  Serial.println("Video won't be record.");
+    lights.setStatus(ErrorComponent::SD, 2);
+    //fl_sd_mounted = false;
+  }
+  //}
+  
+  //{EEPROM init
+  EEPROM.begin(EEPROM_SIZE);			//5 bytes
+  uint8_t tmp;
+  folder_num = 0;
+  EEPROM.get(0, tmp);		//check for first start
+  if (tmp == MAGIC_NUMBER) {
+    EEPROM.get(EEPROM_ADDR_FOLDER_NUM, folder_num);
+    EEPROM.get(EEPROM_ADDR_FRAMESIZE, framesize);
+    EEPROM.get(EEPROM_ADDR_QUALITY, quality);
+    //s->set_framesize(s, framesize);
+    s->set_framesize(s, (framesize_t)framesize);
+    s->set_quality(s, quality);
+    Serial.print("Found data in EEPROM. folder_num = "); Serial.println(folder_num);
+  }
+  else {
+    EEPROM.put(0, MAGIC_NUMBER);
+    EEPROM.put(EEPROM_ADDR_FOLDER_NUM, folder_num);
+    EEPROM.put(EEPROM_ADDR_FRAMESIZE, framesize);
+    EEPROM.put(EEPROM_ADDR_QUALITY, quality);
+  }
+
+  folder_num++;
+  file_num = 1;
+  EEPROM.put(EEPROM_ADDR_FOLDER_NUM, folder_num);
+  EEPROM.end();
+  //} EEPROM
+   
   //{WiFi init
   Serial.print("WiFi manager initialization:");
   //digitalWrite(LED_RED, LED_ON);
@@ -772,46 +793,6 @@ void setup() {
   }
   //}
   
-  //{SD card init
-  esp_err_t card_err = init_sdcard();
-  if (card_err == ESP_OK) {
-    Serial.println("SD card mount successfully.");
-	  fl_sd_mounted = true;  
-  }
-  else {
-    Serial.printf("SD Card init failed with error 0x%x\n", card_err);
-	  Serial.println("Video won't be record.");
-    //fl_sd_mounted = false;
-  }
-  //}
-  
-  //{EEPROM init
-  EEPROM.begin(EEPROM_SIZE);			//5 bytes
-  uint8_t tmp;
-  folder_num = 0;
-  EEPROM.get(0, tmp);		//check for first start
-  if (tmp == MAGIC_NUMBER) {
-    EEPROM.get(EEPROM_ADDR_FOLDER_NUM, folder_num);
-    EEPROM.get(EEPROM_ADDR_FRAMESIZE, framesize);
-    EEPROM.get(EEPROM_ADDR_QUALITY, quality);
-    //s->set_framesize(s, framesize);
-    s->set_framesize(s, (framesize_t)framesize);
-    s->set_quality(s, quality);
-    Serial.print("Found data in EEPROM. folder_num = "); Serial.println(folder_num);
-  }
-  else {
-    EEPROM.put(0, MAGIC_NUMBER);
-    EEPROM.put(EEPROM_ADDR_FOLDER_NUM, folder_num);
-    EEPROM.put(EEPROM_ADDR_FRAMESIZE, framesize);
-    EEPROM.put(EEPROM_ADDR_QUALITY, quality);
-  }
-
-  folder_num++;
-  file_num = 1;
-  EEPROM.put(EEPROM_ADDR_FOLDER_NUM, folder_num);
-  EEPROM.end();
-  //} EEPROM
-  
   if (fl_sd_mounted) {
     //delete_oldest();	delete right before start_avi
     char tmpstr[13];
@@ -826,6 +807,7 @@ void setup() {
     }
     else {
       Serial.println("Failed to creat dir.");
+      lights.setStatus(ErrorComponent::SD, 3);
     }
 
     if (AUTOSTART_REC) fl_start_rec = true;
@@ -843,8 +825,9 @@ void setup() {
 
 void loop() {
   buttonsTick();
+  lights.update();
   // Check if the pin state has changed
-  int reading = digitalRead(IGNITION_PIN);
+  int reading = readIgnitionPin();
   if (reading != lastState && reading != lastDebouncedState) {
     lastDebounceTime = millis();  // reset the debouncing timer
   }
@@ -881,7 +864,7 @@ void loop() {
       Serial.println("------------------------------------------------");
       Serial.printf("Start the file %d.%03d.avi\n",  folder_num, file_num);
       Serial.printf("Framesize %d, quality %d, length %d seconds\n", framesize, quality, avi_length);
-      setNeoPixelColor(200,0,0);
+      //setNeoPixelColor(200,0,0);
       frame_cnt += 1;
       fb_curr = get_good_jpeg();				// should take zero time
       //delete_oldest();
@@ -904,7 +887,7 @@ void loop() {
       
       end_avi();						// end the movie
       fl_recording = false;
-      setNeoPixelColor(0,0,0);
+      //setNeoPixelColor(0,0,0);
       avi_end_time = millis();
 	    float fps = frame_cnt /  (1.0*(avi_end_time - avi_start_time) /1000);
       Serial.printf("It was %d frames, avg. framerate = %.1f fps.\n", frame_cnt, fps);
@@ -913,7 +896,6 @@ void loop() {
     }
     else if ( fl_recording &&  fl_start_rec) {  // another frame of the avi
       frame_cnt += 1;
-      setNeoPixelColor(155,0,0);
       fb_curr = fb_next;				// we will write a frame, and get the camera preparing a new one
       fb_next = get_good_jpeg();		// should take near zero, unless the sd is faster than the camera, when we will have to wait for the camera
       /*if (fb_for_stream == NULL) {
