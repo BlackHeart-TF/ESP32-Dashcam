@@ -669,10 +669,10 @@ void setup() {
   config.pixel_format = PIXFORMAT_JPEG;
   //init with high specs to pre-allocate larger buffers
   if(psramFound()){
-    config.frame_size = FRAMESIZE_UXGA;
+    config.frame_size = FRAMESIZE_XGA;//FRAMESIZE_UXGA;
     config.jpeg_quality = 10;
     quality = 10;
-    config.fb_count = 7; //2 //?
+    config.fb_count = 2; //2 //?
   } else {
     config.frame_size = FRAMESIZE_SVGA;
     config.jpeg_quality = 12;

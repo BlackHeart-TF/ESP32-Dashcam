@@ -11,8 +11,9 @@
 #define EEPROM_ADDR_QUALITY		6		// address of `quality` in EEPROM
 
 // Select camera model
-#define CAMERA_MODEL_FREENOVE_ESP32S3
+//#define CAMERA_MODEL_FREENOVE_ESP32S3
 //#define CAMERA_MODEL_SEEED_ESP32S3
+#define CAMERA_MODEL_M5STACK_UNITCAM_S3
 
 
 #include "sd_led_pins.h"
